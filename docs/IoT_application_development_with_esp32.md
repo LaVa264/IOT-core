@@ -155,3 +155,95 @@
     ```C
     ESP_ERROR_CHECK(spi_bus_initialize(host, bus_config, dma_chan));
     ```
+
+### 11. Embedded C coding style
+
+- Header files:
+
+```C
+#pragma once
+
+/* Include directives --------------------------------------------------------*/
+#include <Arduino.h>
+
+/* Public defines ------------------------------------------------------------*/
+#define CODING_STYLE    1                        /* Describe it if necessary. */
+
+/* Extern variables ----------------------------------------------------------*/
+extern esp_netif_t *g_sta;
+
+/* Public types --------------------------------------------------------------*/
+
+/**
+ * @brief   Provide a description for your typedef.
+ * @note    Add not if necessary.
+ * @note    postfix enum with `_e`.
+ */
+typedef enum {
+    STYLE_1 = 0,
+    STYLE_2
+} coding_style_e;
+
+/**
+ * @brief   Provide a description for your structure.
+ * @note    Add not if necessary.
+ * @note    postfix struct with `_t`.
+ */
+typedef struct {
+    void *data;
+    void *msgID;
+} coding_style_t;
+
+/* Public function prototypes ------------------------------------------------*/
+/**
+ * @brief   public function definitions description in the header file only.
+ * @param   var_1   - describe var_1 here.
+ * @param   var_2   - describe var_2 here.
+ * @return  ESP_OK, if successful.
+ */
+esp_err_t coding_style_public(int var_1, int var_2);
+```
+
+- C source files:
+
+```C
+/* Include directives --------------------------------------------------------*/
+/* 1. Standard libraries. */
+#include <stdio.h>
+#include <string.h>
+
+/* 2. ESP-IDF headers. */
+#include <esp_err.h>
+
+/* 3. Application headers. */
+#include "ota.h"
+
+
+/* Global variables ----------------------------------------------------------*/
+bool g_var = false;                             /* `g_` for global variables. */
+
+/* Private variables ---------------------------------------------------------*/
+static bool s_var = false;                      /* `s_` for static variables. */
+
+/* Private function prototypes -----------------------------------------------*/
+
+/**
+ * @brief   private function definitions require a description.
+ * @note    Use the `file_name` prefix for the function name e.g. `coding_style`
+ * @param   var_1   - describe var_1 here.
+ * @return  ESP_OK, if successful.
+ */
+static esp_err_t coding_style_static(int var_a);
+
+/* Public function definition ------------------------------------------------*/
+esp_err_t coding_style_public(int var_1, int var_2)
+{
+    return ESP_OK;
+}
+
+/* Private function definition -----------------------------------------------*/
+static esp_err_t coding_style_static(int var_a)
+{
+    return ESP_OK;
+}
+```
