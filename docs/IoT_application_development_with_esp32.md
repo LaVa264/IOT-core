@@ -81,3 +81,77 @@
 - `vTaskDelay()` is used to send a task into BLOCKED state for a set number of Ticks.
   - The actual time that the task remain blocked depends on the tick rate.
   - The constant portTICK_PERIOD_MS can be used to calculate real time from the tick rate - with the resolution of one tick period.
+
+### 10. ESP-IDF Error handling
+
+- Overview of Error Handling
+- Error Codes
+- Converting Error Codes to Error Messages
+- ESP_ERROR_CHECK Macro
+- Error Handling patterns.
+
+- Error handling: Identifying and handling run-time errors is important for developing robust applications. There can be multiple kinds of run-time errors:
+  - Recoverable errors:
+    - Error indicated by functions through return values (error codes).
+    - C++ exceptions, thrown using `throw` keyword.
+  - Unrecoverable (fatal) errors:
+    - Failed assertion (using `assert` macro and equivalent methods) and abort() calls.
+    - CPU exceptions: access to protected regions of memory, illegal instruction, etc.
+    - System level checks: watchdog timeout, cache access error, stack overflow, stack mashing, heap corruption, etc.
+
+- Error Codes in brief:
+  - Most ESP-IDF-specific functions use `esp_err_t` type to return error codes.
+    - `esp_err_t` is a signed integer type.
+    - Success (no error) is indicated with ESP_OK code, which is defined as zero.
+  - Common error codes for generic failures (out of memory, timeout, invalid argument, etc.) are defined in `esp_err.h` file.
+  - Various ESP-IDF header files defined possible error codes using preprocessor defines. Usually these defines start with `ESP_ERR_` prefix.
+
+- Converting Error Codes to Error Messages
+  - Conversion to strings for debug logging.
+    - For each error code defined in ESP-IDF components, `esp_err_t` value can be converted to an error code name using `esp_err_to_name()` or `esp_err_to_name_r()` functions.
+
+- `ESP_ERROR_CHECK` Macro
+  - Similar to Assert...
+    - `ESP_ERROR_CHECK` macro checks `esp_err_t` value rather than a bool condition.
+      - If the argument of `ESP_ERROR_CHECK` is not equal `ESP_OK`, than an error message is printed on the console, and `abort()` is called.
+
+- Strategies for handling errors:
+  - Document: [link](https://docs.espressif.com/projects/esp-idf/en/latest/esp32/api-guides/error-handling.html#error-handling-patterns)
+  - 1. Attempt to recover. Depending on the situation, we may try the following methods:
+    - Retry the call after some time;
+    - Attempt to de-initialize the driver and re-initialize it again;
+    - Fix the error condition using an out-of-band mechanism (e.g reset an external peripheral which is not responding.)
+
+    ```C
+    esp_err_t err;
+    do {
+        err = sdio_slave_send_queue(addr, len, arg, timeout);
+        // keep retrying while the sending queue is full
+    } while (err == ESP_ERR_TIMEOUT);
+    if (err != ESP_OK) {
+        // handle other errors
+    }
+    ```
+
+  - 2. Propagate the error to the caller. In some middleware components this means that a function must exit with same error code, making sure any resource allocations are rolled back.
+
+    ```C
+    sdmmc_card_t* card = calloc(1, sizeof(sdmmc_card_t));
+    if (card == NULL) {
+        return ESP_ERR_NO_MEM;
+    }
+    esp_err_t err = sdmmc_card_init(host, &card);
+    if (err != ESP_OK) {
+        // Clean up
+        free(card);
+        // Propagate the error to the upper layer (e.g. to notify the user).
+        // Alternatively, application can define and return custom error code.
+        return err;
+    }
+    ```
+
+  - 3. Convert into unrecoverable error, for example using `ESP_ERROR_CHECK`.
+
+    ```C
+    ESP_ERROR_CHECK(spi_bus_initialize(host, bus_config, dma_chan));
+    ```
