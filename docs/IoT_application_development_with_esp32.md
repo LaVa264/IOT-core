@@ -247,3 +247,197 @@ static esp_err_t coding_style_static(int var_a)
     return ESP_OK;
 }
 ```
+
+## V. Components & Sensors Library
+
+### 12. Components & Sensors Library overview
+
+- Sensor Library Integration is Completely optional
+
+## IIX. Wifi Application
+
+### 17. Wifi Implementation overview
+
+- Wifi Application (High-Level Perspective)
+- About the Implementation:
+  - The ESP32 should start its Access Point so that other devices can connect to it.
+    - This enables users to access information e.g, sensor data, device info, connection status/information, user option to connect to and disconnect from an AP, display local time, etc.
+  - The WiFi application will start an HTTP Server, which will support a web page.
+  - The application will contain a FreeRTOS task that accepts FreeRTOS Queue messages (xQueueCreate(), xQueueSend() and xQueueReceive()) for event coordination.
+
+- Simplified Overview of Wifi Application
+  - 1. Connecting Device (mobile phone, laptop, etc.)
+    - Become `station` of ESP32's SoftAP when connected.
+    - DHCP service from the ESP32's SoftAP will dynamically assign an IP to your device.
+    - Interact with the ESP32 via the webpage.
+
+  - 2. ESP32 SoftAP/Station
+    - AP/STA combination mode.
+    - We assign an IP to the SoftAP; the interface of the ESP32 is statically configured.
+    - DHCP server dynamically assigns an IP for connecting stations.
+    - We set a maximum number of stations allowed to connect.
+
+  - 3. Connecting Device
+    - When the ESP32 connects to an AP, local time can be obtained utilizing SNTP ()(Simple Network Time Protocol)(if the AP is connected to the internet).
+    - DHCP service from the AP, will dynamically assign an IP to the ESP32 in our application.
+
+- ESP-IDF WiFi Driver APIs, in brief:
+  - Wifi driver: [link](https://docs.espressif.com/projects/esp-idf/en/latest/esp32/api-guides/wifi.html)
+  - API reference: [link](https://docs.espressif.com/projects/esp-idf/en/latest/esp32/api-reference/network/esp_wifi.html)
+  - ESP-NETIF (Network interface): [link](https://docs.espressif.com/projects/esp-idf/en/latest/esp32/api-reference/network/esp_netif.html)
+
+- ESP32 Wifi Feature list:
+- The following features are supported:
+  - 4 virtual WiFi Interfaces, which are STA, AP, Sniffer and reserved.
+  - Station-only mode, AP-only mode, station/AP coexistence mode.
+  - WPA/WPA2/WPA3/WPA2-Enterprise/WPA3-Enterprise/WAPI/WPS and DPP.
+  - Modem-sleep.
+  - Long Range mode, which supports up to 1KM of data traffic.
+  - Up to 20M bit/s TCP through put and 30M bit/s UDP throughput over the air.
+  - Sniffer.
+  - Both fast scan and all-channel scan.
+  - Multiple antennas.
+  - Wifi aware (NAN).
+
+- How to write a WiFi Application?
+  - Preparation:
+    - Generally, the most effective way to begin your own Wi-Fi application is to select an example which is similar to your own application, and port the useful part into your project. We recommend you to select an [example](https://github.com/espressif/esp-idf/tree/82cceabc6e/examples/wifi)
+  - Setting Wi-Fi Compile-time Options.
+  - Init Wi-Fi.
+  - Start/Connect WiFi.
+  - Event-handling: Generally, it is easy to write code in `sunny-day` scenarios, such as `WIFI_EVENT_STA_START` and `WIFI_EVENT_STA_CONNECTED`. The hard part is to write routines in `rainy-day` scenarios, such as `WIFI_EVENT_STA_DISCONNECTED`. Good handling of `rainy-day` scenarios is fundamental to robust WiFi applications.
+
+- **The primary principle to write a robust application with WiFi API is to always check the error code and write the error-handling code**. Generally, the error-handling code can be used:
+  - For recoverable errors, in which case you can write a recoverable-error code. For example, when `esp_wifi_start()` returns `ESP_ERR_NO_MEM`, the recoverable-code `vTaskDelay()` can be called in order to get a microsecond's delay for another try.
+  - For non-recoverable, yet non-critical errors, in which case printing the error code is a good method for error handling.
+  - For non-recoverable and also critical errors, in which case `assert` may be a good method for error handling.
+
+- ESP32 Wi-Fi API Parameter Initialization:
+  - When initializing struct parameters for the API, one of two approaches should be followed:
+    - Explicitly set all fields of the parameter.
+    - Use get API to get current configuration first, then set application specific fields.
+  - Initializing or getting the entire structure is very important, because most of the time the value 0 indicates that default value is used.
+
+- **ESP32 WiFi Programming Model**:
+
+- The ESP32 Wi-Fi programming model is depicted as follows:
+                      Default Handler                           User handler
+|TCP Stack|--(event)-->| Event Task|--(callback or event)--> |Application task|
+                            /\                                     ||
+                            ||    (event)                          ||
+                        |WiFi Driver|<========(API call)===========//
+
+- The WiFi driver can be considered a black box that knows nothing about high-layer code, such as the TCP/IP Stack, Application Task, and Event Task.
+- The application task (code) generally calls WiFi driver APIs to initialize WiFi and handles WiFi events when necessary. WiFi Driver receives API calls, handle them, and posts events to the application.
+- WiFi event handling is based on the `esp_event` library. Events are sent by the WiFi driver to the default event loop. Application may handle these events in callbacks registered using `esp_event_handler_register()`. WiFi events are also handled by `esp_netif` component to provide a set of default behaviors. For example, when WiFi station connects to an AP, `esp_netif` will automatically start the DHCP client by default.
+
+- **ESP-NETIF**:
+  - The purpose of the `ESP-NETIF` library is twofold:
+    - It provides an abstraction layer for the application on top of the TCP/IP stack. this allows applications to choose between IP stacks in the future.
+    - The APIs it provides are thread-safe, event if the underlying TCP/IP stack APIs are not.
+
+  - ESP-IDF currently implements ESP-NETIF for the lwIP TCP/IP stack only. However, the adapter itself is TCP/IP implementation-agnostic and allows different implementations.
+  - **ESP-NETIF Architecture**:
+
+```text
+                       |          (A) USER CODE                 |
+                       |                 Apps                   |
+      .................| init          settings      events     |
+      .                +----------------------------------------+
+      .                   .                |           *
+      .                   .                |           *
+  --------+            +===========================+   *     +-----------------------+
+          |            | new/config   get/set/apps |   *     | init                  |
+          |            |                           |...*.....| Apps (DHCP, SNTP)     |
+          |            |---------------------------|   *     |                       |
+    init  |            |                           |****     |                       |
+    start |************|  event handler            |*********|  DHCP                 |
+    stop  |            |                           |         |                       |
+          |            |---------------------------|         |                       |
+          |            |                           |         |    NETIF              |
+    +-----|            |                           |         +-----------------+     |
+    | glue|---<----|---|  esp_netif_transmit       |--<------| netif_output    |     |
+    |     |        |   |                           |         |                 |     |
+    |     |--->----|---|  esp_netif_receive        |-->------| netif_input     |     |
+    |     |        |   |                           |         + ----------------+     |
+    |     |...<....|...|  esp_netif_free_rx_buffer |...<.....| packet buffer         |
+    +-----|     |  |   |                           |         |                       |
+          |     |  |   |                           |         |         (D)           |
+    (B)   |     |  |   |          (C)              |         +-----------------------+
+  --------+     |  |   +===========================+
+COMMUNICATION   |  |                                               NETWORK STACK
+DRIVER          |  |           ESP-NETIF
+                |  |                                         +------------------+
+                |  |   +---------------------------+.........| open/close       |
+                |  |   |                           |         |                  |
+                |  -<--|  l2tap_write              |-----<---|  write           |
+                |      |                           |         |                  |
+                ---->--|  esp_vfs_l2tap_eth_filter |----->---|  read            |
+                       |                           |         |                  |
+                       |            (E)            |         +------------------+
+                       +---------------------------+
+                                                                   USER CODE
+                             ESP-NETIF L2 TAP
+```
+
+- Data and Event Flow in the diagram:
+  - `.........` Initialization line from user code to ESP-NETIF and communication driver.
+  - `--<--->--` Data packets going from communication media to TCP/IP stack and back.
+  - `********` Events aggregated in ESP-NETIF propagate to the driver, user code, and network stack.
+  - `|` User settings and runtime configuration.
+
+- ESP-NETIF Interaction
+- **A. User code, Boilerplate**
+  - Overall application interaction with a specific IO driver for communication media and configured TCP/IP network stack is abstracted using ESP-NETIF APIs and is outlined as below:
+    - 1. Initialization code
+      - 1.1. Initialize IO driver.
+      - 1.2. Creates a new instance of ESP-NETIF and configure it with:
+        - ESP-NETIF specific options (flags, behavior, name).
+        - Network stack options (netif init and input functions, not publicly available).
+        - IO driver specific options (transmit, free rx buffer functions, IO driver handle)
+      - 1.3. Attaches the IO driver handle to the ESP-NETIF instance created in the above steps.
+      - 1.4. Configures event handlers
+        - Use default handlers for common interfaces defined in IO drivers; or defined a specific handler for customized behavior or new interfaces.
+        - Register handlers for app-related events (such as IP lost or acquired).
+    - 2. Interaction with network interfaces using ESP-NETIF API.
+      - 2.1. Gets and sets TCP/IP-related parameters (DHCP, IP, etc)
+      - 2.2. Receives IP events (connect or disconnect)
+      - 2.3. Controls application lifecycle (set interface up or down)
+
+- **B. Communication Driver, IO Driver, and Media Driver**
+  - Communication driver plays these two important roles in relation to ESP-NETIF:
+    - 1. Event handlers: Defines behavior patterns of interaction with ESP-NETIF (e.g., ethernet link-up -> turn netif on)
+    - 2. Glue IO layer: Adapts the input or output functions to use ESP-NETIF transmit, receive, and free receive buffer.
+      - Install driver_transmit to the appropriate ESP-NETIF object so that outgoing packets from the network stack are passed to the IO driver.
+      - Calls `esp_netif_receive()` to pass incoming data to the network stack.
+
+- **C. ESP-NETIF**
+  - ESP-NETIF serves as an intermediary between an IO driver and a network stack, connecting the packet data path between the two. It provides a set of interfaces for attaching a driver to an ESP-NETIF object at runtime and configures a network stack during compiling. Additionally, a set of APIs is provided to control the network interface lifecycle and its TCP/IP properties.
+  - As an overview, the ESP-NETIF public interface can be divided into six groups:
+    - 1. Initialization APIs (to create and configure ESP-NETIF instance).
+    - 2. Input or Output API (for passing data between IO driver and network stack).
+    - 3. Event or Action API.
+      - Used for network interface lifecycle management
+      - ESP-NETIF provides building blocks for designing event handlers.
+    - 4. Setters and Getters API for basic network interface properties.
+    - 5. Network stack abstraction API: enabling user interaction with TCP/IP stack.
+      - Set interface up or down
+      - DHCP server and client API
+      - DNS API
+      - SNTP API
+    - 6. Driver conversion utilities API
+
+- **D. Network Stack**
+  - The network stack has no public interaction with application code with regard to public interfaces and shall be fully abstracted by ESP-NETIF API.
+
+- **E. ESP-NETIF L2 TAP Interface**
+  - The ESP-NETIF L2 TAP interface is a mechanism in ESP-IDF used to access Data Link Layer (L2 per OSI/ISO) for frame reception and transmission from the user application.
+  - From a user perspective, the ESP-NETIF L2 TAP interface is accessed using file descriptors of VFS, which provides file-like interfacing (using functions like open(), read(), write(), etc).
+
+- Configuration Steps and ESP-IDF APIs Used:
+  - Define WiFi Settings -> header file with SSID, Password, IP, gateway, Netmask, etc.
+  - Define WiFi FreeRTOS task -> Use `xTaskCreatePinnedToCore()` or `xTaskCreate()`.
+  - Create an event handler -> Call `esp_event_handler_instance_register()`.
+  - Implement default configuration -> Initialize TCP/IP stack using `esp_netif_init()` and WiFi configuration by calling `esp_wifi_init()`, `esp_wifi_set_storage()`, and default configurations `esp_netif_create_default_wifi_ap()`, `esp_netif_create_default_wifi_sta()`.
+  - Define ESP32 SoftAP configuration -> Define AP settings `wifi_config_t` struct and static IP (in our case) APs Used `esp_netif_set_ip_info()`, `esp_netif_dhcps_start()`, `esp_wifi_set_mode()`, `esp_wifi_set_config()`, `esp_wifi_set_bandwidth()`, `esp_wifi_set_ps()`.
+  - Start WiFi `esp_wifi_start()`.
