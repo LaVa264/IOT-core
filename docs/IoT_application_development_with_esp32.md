@@ -441,3 +441,29 @@ DRIVER          |  |           ESP-NETIF
   - Implement default configuration -> Initialize TCP/IP stack using `esp_netif_init()` and WiFi configuration by calling `esp_wifi_init()`, `esp_wifi_set_storage()`, and default configurations `esp_netif_create_default_wifi_ap()`, `esp_netif_create_default_wifi_sta()`.
   - Define ESP32 SoftAP configuration -> Define AP settings `wifi_config_t` struct and static IP (in our case) APs Used `esp_netif_set_ip_info()`, `esp_netif_dhcps_start()`, `esp_wifi_set_mode()`, `esp_wifi_set_config()`, `esp_wifi_set_bandwidth()`, `esp_wifi_set_ps()`.
   - Start WiFi `esp_wifi_start()`.
+
+## 9. HTTP Server
+
+### 22. HTTP Server implementation
+
+- The HTTP Server will support the web page files (.html, .css, .js).
+- It will also support OTA (Over the Air) Firmware updates.
+- The HTTP server will be able to respond to Connection and Disconnection buttons on the web page e.g, by entering SSID & Password into text fields and clicking connect and disconnect for removing a connection.
+- The Web server will also handle sending connection information (SSID and IP, Gateway, Netmask) about the active connection to the web page.
+
+- Overview:
+  - The HTTP Server component provides an ability for running a lightweight web server on ESP32.
+  - Following are detailed steps to use the API exposed by the HTTP Server:
+  - `httpd_start()`: Creates an instance of HTTP server, allocate memory/resources for it depending upon the specified configuration and outputs a handle to the server instance. The server has both, a listening socket (TCP) for HTTP traffic, and a control socket (UDP) for control signals, which are selected in a round robin fashion in the server task loop.
+    - The task priority and stack size are configurable during server instance creation by passing httpd_config_t structure to `httpd_start()`.
+    - TCP traffic is parsed as HTTP requests and, depending on the requested URI, user registered handlers are invoked which are supposed to send back HTTP response packets.
+  - `httpd_stop()`: This stops the server with the provided handle and frees up any associated memory/resources.
+    - This is a blocking function that first signals a halt to the server task and then waits for the task to terminate.
+    - While stopping, the task closes all open connections, removes registered URI handlers and resets all session context data to empty.
+  - `httpd_register_uri_handler()`: A URI handler is registered by passing object of type httpd_uri_t structure which has members including uri name, method type, function pointer of type `esp_err_t *handler (httpd_req_t *req)` and `user_ctx` pointer to user context data.
+
+- Configuration steps and notable ESP-IDF Functions Used
+  - Embed Binary Data (index.html, app.css and code.js) -> Embedding Binary file.
+  - Create HTTP Server start and stop functions -> create a wrappers around these.
+  - Create the default HTTP server configuration and adjust to our need -> Create the struct `httpd_config_t` and call `httpd_start()`.
+  - Register the URI handlers.
