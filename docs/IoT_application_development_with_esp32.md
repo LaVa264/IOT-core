@@ -467,3 +467,84 @@ DRIVER          |  |           ESP-NETIF
   - Create HTTP Server start and stop functions -> create a wrappers around these.
   - Create the default HTTP server configuration and adjust to our need -> Create the struct `httpd_config_t` and call `httpd_start()`.
   - Register the URI handlers.
+
+## 10. OTA Firmware Update
+
+### 28. OTA Firmware Update Implement
+
+- Overview:
+  - Allows a device to update itself based on data received (for example, over WiFi or Bluetooth) while the normal firmware is running.
+  - Requires configuration a Partition Table of the device with at least two "OTA app slots" (i.e. ota_0 and ota_1) and an `OTA Data Partition`.
+  - The OTA operation functions write a new app firmware image to whichever OTA app slot that is currently not selected for booting...
+    - Once the image is verified, the OTA Data partition is updated to specify that this image should be used for the next boot.
+
+- About Partition Tables:
+  - A single ESP32's flash can contain multiple apps, as well as many kinds of data (calibration data, filesystem, parameter storage, etc) for this reason a partition table is flashed to 0x8000 (default offset) in the flash.
+  - Each entry in the partition table has a name (label), type (app, data, etc), subtype and the offset in flash where the partition is loaded.
+  - The simplest way to use the partition table is to open the project configuration using Eclipse and choose `Factory app, two OTA definitions`.
+  - The table is located: esp-idf/components/partition_table
+
+  - Description of `Factory app, two OTA definitions` configuration:
+
+    ```text
+    # ESP-IDF Partition Table
+    # Name,   Type, SubType, Offset,  Size, Flags
+    nvs,      data, nvs,     0x9000,  0x4000,
+    otadata,  data, ota,     0xd000,  0x2000,
+    phy_init, data, phy,     0xf000,  0x1000,
+    factory,  app,  factory, 0x10000,  1M,
+    ota_0,    app,  ota_0,   0x110000, 1M,
+    ota_1,    app,  ota_1,   0x210000, 1M,
+    ```
+
+    - There are now three app partition definitions. The type of the `factory` app (at 0x10000) and the next two `OTA` apps are set to `app`, but their subtypes are different.
+
+    - There is also a new `otadata` slot, which holds the data for OTA updates. The boot-loader consults this data in order to know which app to execute. If `otadata` is empty, it will execute the `factory` app.
+
+- About the Implementation:
+  - The user starts the OTA update by uploading a `.bin` file over the webpage.
+  - The OTA firmware update is performed, and the webpage displays the status.
+  - Once updated the webpage is no longer available and the ESP32 will restart.
+  - When we test the update, we will verify the above by uploading a build file (.bin file) with a different SoftAP SSID and different color webpage background.
+
+- Utilizing ESP-IDF for OTA Updates
+  - Configuration steps and notable ESP-IDF APIs Used:
+    - Receive the file from the webpage -> via the web server, calling `httpd_req_recv()`.
+    - Identify where the `.bin` file starts, then -> call `esp_ota_begin()`.
+    - Write the first part of the data -> call `esp_ota_write()`.
+    - Continue to receiving the file calling `httpd_req_recv()` and `esp_ota_write()` until all content is received.
+    - Finish OTA update and validate newly written app image -> call `esp_ota_end()`.
+    - Configure OTA data for a new boot partition -> call `esp_ota_set_boot_partition()`.
+    - Restart ESP32 -> call `esp_restart()`.
+
+- App rollback:
+  - The main purpose of the application rollback is to keep the device working after the update. This feature allows you to roll back to the previous working application in case a new application has critical errors. When the rollback process is enabled and an OTA update provides a new version of the app, one of three things can happen:
+    - The application works fine, `esp_ota_mark_app_valid_cancel_rollback()` marks the running application with the state `ESP_OTA_IMG_VALID`. There are no restrictions on booting this application.
+    - The application has critical errors and further work is not possible, a rollback to the previous application is required, `esp_ota_mark_app_invalid_rollback_and_reboot()` marks the running application with the state `ESP_OTA_IMG_INVALID` and reset. This application will not be selected by the boot-loader for boot and will boot the previously working application.
+    - If the `CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE` option is set, and a reset occurs without calling either function then the application is rolled back.
+
+- Rollback Process:
+  - The description of the rollback process when `CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE` option is enabled:
+    - 1. The new application is successfully downloaded and `esp_ota_set_boot_partition()` function makes this partition bootable and sets the state `ESP_OTA_IMG_NEW`. This state means that the application is new and should be monitored for its first boot.
+    - 2. Reboot `esp_restart()`.
+    - 3. The bootloader checks for the `ESP_OTA_IMG_PENDING_VERIFY` state if it is set, then it will be written to `ESP_OTA_IMG_ABORTED`.
+    - 4. The bootloader selects a new application to boot so that the state is not set as `ESP_OTA_IMG_INVALID` or `ESP_OTA_IMG_ABORTED`.
+    - 5. The bootloader checks the selected application for `ESP_OTA_IMG_NEW` state if it is set, then it will be written to `ESP_OTA_IMG_PENDING_VERIFY`. This state means that the application requires confirmation of its operability, if this does not happen and a reboot occurs, this state will be overwritten to `ESP_OTA_IMG_ABORTED` (see above) and this application will no longer be able to start, i.e., there will be a rollback to the previous working application.
+    - 6. A new application has started and should make a self-test.
+    - 7. If the self-test has completed successfully, then you must call the function `esp_ota_mark_app_valid_cancel_rollback()` because the application is awaiting confirmation of operability (`ESP_OTA_IMG_PENDING_VERIFY` state).
+    - 8. If the self-test fails, then call `esp_ota_mark_app_invalid_rollback_and_reboot()` function to roll back to the previous working application, while the invalid application is set `ESP_OTA_IMG_INVALID` state.
+    - 9. If the application has not been confirmed, the state remains `ESP_OTA_IMG_PENDING_VERIFY`, and the next boot it will be changed to `ESP_OTA_IMG_ABORTED`, which prevents re-boot of this application. There will be a rollback to the previous working application.
+
+- Anti-rollback:
+  - Anti-rollback prevents rollback to application with security version lower than one programmed in eFuse of chip.
+  - This function works if set `CONFIG_BOOTLOADER_APP_ANTI_ROLLBACK` option. In the boot-loader, when selecting a boot-able application, an additional security version check is added which is on the chip and in the application image. The version in boot-able firmware must be greater than or equal to the version in the chip.
+  - `CONFIG_BOOTLOADER_APP_ANTI_ROLLBACK` and `CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE` options are used together.
+
+- A Typical Anti-rollback Scheme Is:
+  - New firmware released with the elimination of vulnerabilities with the previous version of security.
+  - After the developer makes sure that this firmware is working. He can increase the security version and release a new firmware.
+  - Download new application.
+  - To make it bootable, run the function `esp_ota_set_boot_partition()`. If the security version of the new application is smaller than the version in the chip, the new application will be erased. Update to new firmware is not possible.
+  - Reboot.
+  - In the bootloader, an application with a security version greater than or equal to the version in the chip will be selected.
+  - The next update of app is possible if a running app is in the `ESP_OTA_IMG_VALID` state.
