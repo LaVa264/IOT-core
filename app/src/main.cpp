@@ -4,7 +4,7 @@
 #include "wifi_app.hpp"
 
 void setup() {
-    Serial.begin(115200);
+    //Serial.begin(115200);
 
     /* 1. Initialize NVS. */
     esp_err_t ret = nvs_flash_init();

@@ -1,4 +1,4 @@
-#include <Arduino.h>
+#define LOG_LOCAL_LEVEL ESP_LOG_VERBOSE
 
 #include <freertos/FreeRTOS.h>
 #include <freertos/event_groups.h>
@@ -11,12 +11,13 @@
 
 #include "config.hpp"
 #include "wifi_app.hpp"
+#include "http_server.hpp"
+
 
 /* Private variables ---------------------------------------------------------*/
 
 /**
  * @brief   Tag used for ESP serial console messages.
- * 
  */
 static const char TAG[] = "wifi_app";
 
@@ -123,6 +124,7 @@ static void wifi_app_task(void *param)
         {
             case WIFI_APP_MESSAGE_START_HTTP_SERVER: {
                 ESP_LOGI(TAG, "WIFI_APP_MESSAGE_START_HTTP_SERVER");
+                http_server_start();
             }
             break;
             case WIFI_APP_MESSAGE_CONNECTING_FROM_HTTP_SERVER: {
