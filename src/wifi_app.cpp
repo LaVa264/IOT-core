@@ -84,7 +84,8 @@ void wifi_app_start(void)
     esp_log_level_set("dhcpc", ESP_LOG_DEBUG);
 
     /* 2. Create message queue. */
-    s_wifi_app_event_queue = xQueueCreate(10, sizeof(wifi_app_message_t));
+    s_wifi_app_event_queue = xQueueCreate(WIFI_APP_MAX_QUEUE_HANDLE,
+                                            sizeof(wifi_app_message_t));
 
     /* 3. Start the WiFi application. */
     xTaskCreatePinnedToCore(&wifi_app_task,

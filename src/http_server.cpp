@@ -14,6 +14,8 @@
  */
 static const char TAG[] = "http_server";
 static httpd_handle_t s_http_server_handler = NULL;
+static TaskHandle_t s_http_server_monitor = NULL;
+static QueueHandle_t s_http_server_event_queue = NULL;
 
 /**
  * @brief   Embedded files.
@@ -70,6 +72,13 @@ static esp_err_t http_server_app_css_handler(httpd_req_t *req);
 static esp_err_t http_server_app_js_handler(httpd_req_t *req);
 static esp_err_t http_server_favicon_ico_handler(httpd_req_t *req);
 
+/**
+ * @brief   HTTP server monitor task used to track events of the HTTP server.
+ * 
+ * @param param 
+ */
+static void http_server_monitor(void *param);
+
 /* Public function definition ------------------------------------------------*/
 
 void http_server_start(void)
@@ -87,6 +96,18 @@ void http_server_stop(void)
 
         ESP_LOGI(TAG, "HTTP server stopped.");
     }
+
+    if (s_http_server_monitor) {
+        vTaskDelete(s_http_server_monitor);
+        s_http_server_monitor = NULL;
+    }
+}
+
+BaseType_t http_server_monitor_send_message(http_server_message_e msgID)
+{
+    http_server_message_t msg;
+    msg.msgID = msgID;
+    return xQueueSend(s_http_server_event_queue, &msg, portMAX_DELAY);
 }
 
 /* Private function definition -----------------------------------------------*/
@@ -95,8 +116,18 @@ static httpd_handle_t http_server_configure(void)
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
 
     /* 1. Create HTTP server monitor task. */
+    xTaskCreatePinnedToCore(&http_server_monitor,
+                            "http_server_monitor",
+                            HTTP_SERVER_MONITOR_STACK_SIZE,
+                            NULL,
+                            HTTP_SERVER_MONITOR_PRIORITY,
+                            &s_http_server_monitor,
+                            HTTP_SERVER_MONITOR_CORE_ID);
 
     /* 2. Create message queue. */
+    s_http_server_event_queue = xQueueCreate(
+                                HTTP_SERVER_MONITOR_MAX_QUEUE_HANDLE,
+                                sizeof(http_server_message_t));
 
     /* 3. The core that the HTTP server will run on. */
     config.core_id = HTTP_SERVER_MONITOR_CORE_ID;
@@ -211,4 +242,48 @@ static esp_err_t http_server_favicon_ico_handler(httpd_req_t *req)
                     (const char *)favicon_ico_start,
                     favicon_ico_end - favicon_ico_start);
     return ESP_OK;
+}
+
+static void http_server_monitor(void *param)
+{
+
+    http_server_message_t msg;
+
+    while(1) {
+        
+        if (xQueueReceive(s_http_server_event_queue, &msg, portMAX_DELAY) 
+            != pdTRUE) {
+                continue;
+            }
+
+        switch (msg.msgID)
+        {
+            case HTTP_MSG_WIFI_CONNECT_INIT: {
+
+            }
+            break;
+            case HTTP_MSG_WIFI_CONNECT_SUCCESS: {
+
+            }
+            break;
+            case HTTP_MSG_WIFI_CONNECT_FAIL: {
+
+            }
+            break;
+            case HTTP_MSG_OTA_UPDATE_SUCCESSFUL: {
+
+            }
+            break;
+            case HTTP_MSG_OTA_UPDATE_FAILED: {
+
+            }
+            break;
+            case HTTP_MSG_OTA_UPDATE_INITIALIZED: {
+
+            }
+            break;
+            default:
+            break;
+        }
+    }
 }

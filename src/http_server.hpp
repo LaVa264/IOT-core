@@ -8,7 +8,6 @@
 
 
 /* Public types --------------------------------------------------------------*/
-
 typedef enum {
     HTTP_MSG_WIFI_CONNECT_INIT = 0,
     HTTP_MSG_WIFI_CONNECT_SUCCESS,
